@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "939158208575",
+    "project_id": "esha-deploy",
+    "storage_bucket": "esha-deploy.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:939158208575:android:88eb5618b4641ef09b788a",
+        "android_client_info": {
+          "package_name": "com.example.eshaa_lab"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAn1tEgL6B3w8MMsXwbAEYQjGDzU8MTDmI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

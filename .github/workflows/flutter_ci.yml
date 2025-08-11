@@ -1,4 +1,4 @@
-name: Flutter CI Integration
+name: Flutter CI&CD with Firebase
 
 on:
   push:
@@ -24,23 +24,101 @@ jobs:
       # 3️⃣ Setup Flutter
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.32.8" # Change to your Flutter version
+          flutter-version: "3.32.8"  # Fixed version number
 
       # 4️⃣ Install dependencies
       - name: Install dependencies
         run: flutter pub get
 
-      # 5️⃣ Run tests
-      - name: Run tests
-        run: flutter test || true  # <-- keep build running even if tests fail (remove '|| true' if you want strict check)
+      # 5️⃣ Check if secrets exist and create google-services.json
+      - name: Check GitHub Secrets and Create JSON
+        run: |
+          echo "Checking if secrets are set..."
+          if [ -z "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo "❌ GOOGLE_SERVICES_JSON secret is NOT SET or EMPTY"
+            exit 1
+          else
+            echo "✅ GOOGLE_SERVICES_JSON secret exists"
+            echo "Secret length: $(echo '${{ secrets.GOOGLE_SERVICES_JSON }}' | wc -c)"
+          fi
+          
+          # Create the JSON file
+          mkdir -p android/app
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
 
-      # 6️⃣ Build release APK
+      # 6️⃣ Validate the created JSON
+      - name: Validate google-services.json
+        run: |
+          echo "=== File created successfully ==="
+          ls -la android/app/google-services.json
+          echo ""
+          echo "=== File size ==="
+          du -h android/app/google-services.json
+          echo ""
+          echo "=== JSON validation ==="
+          if python3 -m json.tool android/app/google-services.json > /dev/null; then
+            echo "✅ JSON is valid"
+          else
+            echo "❌ JSON is invalid, showing content:"
+            cat android/app/google-services.json
+            echo ""
+            echo "Attempting to fix common issues..."
+            # Remove potential BOM and normalize
+            sed -i '1s/^\xEF\xBB\xBF//' android/app/google-services.json
+            # Try validation again
+            if python3 -m json.tool android/app/google-services.json > /dev/null; then
+              echo "✅ JSON fixed and is now valid"
+            else
+              echo "❌ JSON still invalid after cleanup"
+              exit 1
+            fi
+          fi
+
+      # 7️⃣ Install Firebase CLI
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      # 8️⃣ Authenticate Firebase
+      - name: Firebase login
+        run: firebase use --add esha-deploy --token "${{ secrets.FIREBASE_TOKEN }}"
+
+      # 9️⃣ Run tests
+      - name: Run tests
+        run: flutter test || true
+
+      # 🔟 Clean before build
+      - name: Clean Flutter
+        run: flutter clean && flutter pub get
+
+      # 1️⃣1️⃣ Build release APK
       - name: Build APK
         run: flutter build apk --release
 
-      # 7️⃣ Upload APK to artifacts
+      # 1️⃣2️⃣ Upload APK to artifacts
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release.apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      # 1️⃣3️⃣ Upload APK to Firebase App Distribution with better error handling
+      - name: Deploy to Firebase App Distribution
+        if: github.ref == 'refs/heads/main'  # Only deploy on main branch
+        run: |
+          echo "🚀 Starting Firebase App Distribution..."
+          echo "Branch: ${{ github.ref }}"
+          echo "App ID: ${{ secrets.FIREBASE_APP_ID }}"
+          
+          if [ -z "${{ secrets.FIREBASE_APP_ID }}" ]; then
+            echo "❌ FIREBASE_APP_ID secret is missing!"
+            echo "Please add it to GitHub Secrets"
+            exit 1
+          fi
+          
+          firebase appdistribution:distribute build/app/outputs/flutter-apk/app-release.apk \
+            --app ${{ secrets.FIREBASE_APP_ID }} \
+            --token "${{ secrets.FIREBASE_TOKEN }}" \
+            --groups "testers" \
+            --release-notes "Automated build from GitHub Actions - $(date)" && \
+          echo "✅ Successfully deployed to Firebase App Distribution!" || \
+          echo "❌ Firebase App Distribution failed!"
